@@ -1,10 +1,12 @@
 from django.shortcuts import render
+from django.db.models import Q
 from django.http import HttpResponse
 from tasks.serializers import RegisterSerializer,TaskSerializer
 from rest_framework.response import Response
 from rest_framework.decorators import api_view,permission_classes
 from rest_framework.permissions import AllowAny,IsAuthenticated
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
 from .models import Tasks
 
 # Create your views here.
@@ -34,7 +36,7 @@ def create_task(request):
 @permission_classes([IsAuthenticated])
 def view_task(request, task_id):
     try:
-        task = Tasks.objects.get(id=task_id)
+        task = Tasks.objects.filter(user=request.user).get(id=task_id)
     except Tasks.DoesNotExist:
         return Response({"error": "Task not found"}, status=404)
 
@@ -57,7 +59,7 @@ def view_task(request, task_id):
 @permission_classes([IsAuthenticated])
 def view_tasks(request):
     if request.method == 'GET':
-        tasks = Tasks.objects.all()
+        tasks = Tasks.objects.filter(user=request.user)
         serializer = TaskSerializer(tasks,many=True)
         return Response(serializer.data,status=status.HTTP_200_OK)
     return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
@@ -66,7 +68,13 @@ def view_tasks(request):
 @permission_classes([IsAuthenticated])
 def view_by_filters(request):
     if request.method == 'GET':
-        tasks = Tasks.objects.all()
+        tasks = Tasks.objects.filter(user=request.user)
+
+        search = request.query_params.get("search")
+        if search:
+            tasks = tasks.filter(
+                Q(title__icontains=search) | Q(desc__icontains=search)
+            )
         print(request.query_params)
         status_param = request.query_params.get('status')
         priority_param = request.query_params.get('priority')
@@ -88,11 +96,73 @@ def view_by_filters(request):
         if priority_param:
             tasks = tasks.filter(priority=priority_param)
 
-        serializer = TaskSerializer(tasks,many=True)
-        return Response(serializer.data,status=status.HTTP_200_OK)
+        ordering = request.query_params.get("ordering")
+        ORDERS = ["created_at","-created_by","status","-status","priority","-priority"]
+
+        if ordering:
+            if ordering not in ORDERS:
+                return Response({"message":"Invalid Ordering Try Again"},400)
+            tasks=tasks.order_by(ordering)
+
+        #pagination
+
+        paginator = PageNumberPagination()
+
+        paginator.page_size = 5
+
+        result_page = paginator.paginate_queryset(tasks,request)
+
+        serializer = TaskSerializer(result_page,many=True)
+        return paginator.get_paginated_response(serializer.data)
     return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(['PUT','PATCH'])
+@permission_classes([IsAuthenticated])
+def update_status(request,task_id):
+    try:
+        task = Tasks.objects.get(id=task_id,user=request.user)
+    except Tasks.DoesNotExist:
+        return Response({"message" : "Task Does not Exist"},status=404)
+    
+    status_choice = request.data.get('status')
+    
+    if not status_choice:
+        return Response({"message": "Status is Required"},status=400)
+    
+    categories = [c[0] for c in Tasks.status_choices]
 
+    if status_choice not in categories:
+        return Response({"message":"Status Is Not Valid Choice"},status=400)
+    
+    previous_choice = task.status
+    task.status = status_choice
+    task.save()
 
+    serializer = TaskSerializer(task)
+    return Response({"message":f"Status has been changed from {previous_choice} to {status_choice}"},status=200)
 
+@api_view(['PUT','PATCH'])
+@permission_classes([IsAuthenticated])
+def update_priority(request,task_id):
+    try:
+        task = Tasks.objects.get(id=task_id,user=request.user)
+    except Tasks.DoesNotExist:
+        return Response({"message" : "Task Does not Exist"},status=404)
+    
+    priority = request.data.get('priority')
+    
+    if not priority:
+        return Response({"message": "Priority is Required"},status=400)
+    
+    categories = [c[0] for c in Tasks.priority_choices]
+
+    if priority not in categories:
+        return Response({"message":"Priority Is Not Valid Choice"},status=400)
+    
+    previous_choice = task.priority
+    task.priority = priority
+    task.save()
+
+    serializer = TaskSerializer(task)
+    return Response({"message":f"Priority has been changed from {previous_choice} to {priority}"},status=200)
