@@ -24,5 +24,5 @@ class TaskSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username',read_only=True)
     class Meta:
         model = Tasks
-        fields = ['id', 'title', 'desc', 'username', 'created_at',"status","priority"]
+        fields = ['id', 'title', 'desc', 'username', 'created_at',"status","priority","due_date"]
         read_only_fields = ['created_at','username']

@@ -8,6 +8,8 @@ from rest_framework.permissions import AllowAny,IsAuthenticated
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from .models import Tasks
+from django.utils import timezone
+from datetime import timedelta
 
 # Create your views here.
 def hello(request):
@@ -104,6 +106,26 @@ def view_by_filters(request):
                 return Response({"message":"Invalid Ordering Try Again"},400)
             tasks=tasks.order_by(ordering)
 
+        overdue = request.query_params.get("overdue")
+        due = request.query_params.get("due")
+
+        if overdue == "true":
+            tasks = tasks.filter(
+                due_date__lt = timezone.now()
+            ).exclude(status="COMPLETED")
+
+        if due == "today":
+            today = timezone.now().date()
+            tasks = tasks.filter(
+                due_date__date = today                
+            ).exclude(status="COMPLETED")
+
+        if due == "thisweek":
+            today = timezone.now().date()
+            week_end = today + timedelta(days=7)
+            tasks = tasks.filter(
+                due_date__date__range = [today,week_end]
+            )
         #pagination
 
         paginator = PageNumberPagination()
