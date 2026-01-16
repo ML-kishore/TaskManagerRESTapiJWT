@@ -38,7 +38,7 @@ def create_task(request):
 @permission_classes([IsAuthenticated])
 def view_task(request, task_id):
     try:
-        task = Tasks.objects.filter(user=request.user).get(id=task_id)
+        task = Tasks.objects.filter(is_deleted=False,user=request.user).get(id=task_id)
     except Tasks.DoesNotExist:
         return Response({"error": "Task not found"}, status=404)
 
@@ -47,7 +47,8 @@ def view_task(request, task_id):
         return Response(serializer.data)
 
     elif request.method == 'DELETE':
-        task.delete()
+        task = task.is_deleted = True
+        task.save()
         return Response({"message": f"Task {task_id} deleted"}, status=status.HTTP_200_OK)
     
     elif request.method == 'PUT':
@@ -61,7 +62,7 @@ def view_task(request, task_id):
 @permission_classes([IsAuthenticated])
 def view_tasks(request):
     if request.method == 'GET':
-        tasks = Tasks.objects.filter(user=request.user)
+        tasks = Tasks.objects.filter(is_deleted=False,user=request.user)
         serializer = TaskSerializer(tasks,many=True)
         return Response(serializer.data,status=status.HTTP_200_OK)
     return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
@@ -70,7 +71,7 @@ def view_tasks(request):
 @permission_classes([IsAuthenticated])
 def view_by_filters(request):
     if request.method == 'GET':
-        tasks = Tasks.objects.filter(user=request.user)
+        tasks = Tasks.objects.filter(user=request.user,is_deleted=False)
 
         search = request.query_params.get("search")
         if search:
@@ -143,7 +144,7 @@ def view_by_filters(request):
 @permission_classes([IsAuthenticated])
 def update_status(request,task_id):
     try:
-        task = Tasks.objects.get(id=task_id,user=request.user)
+        task = Tasks.objects.get(id=task_id,user=request.user,is_deleted=False)
     except Tasks.DoesNotExist:
         return Response({"message" : "Task Does not Exist"},status=404)
     
