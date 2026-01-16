@@ -10,5 +10,6 @@ urlpatterns = [
     path('tasks/filter/',views.view_by_filters,name='tasks_with_params'),
     path('tasks/<int:task_id>/priority/',views.update_priority,name='update_priority'),
     path('tasks/<int:task_id>/status/',views.update_status,name='update_status'),
+    path('stats/',views.api_stats,name='stats'),
     
 ]

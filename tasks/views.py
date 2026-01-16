@@ -11,6 +11,7 @@ from .models import Tasks
 from django.utils import timezone
 from datetime import timedelta
 
+
 # Create your views here.
 def hello(request):
     return HttpResponse("<h1>Testing....</h1>")
@@ -189,3 +190,19 @@ def update_priority(request,task_id):
 
     serializer = TaskSerializer(task)
     return Response({"message":f"Priority has been changed from {previous_choice} to {priority}"},status=200)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def api_stats(request):
+    qs = Tasks.objects.filter(is_deleted=False,user=request.user)
+
+    data = {
+        "total" : qs.count(),
+        "pending" : qs.filter(status='PENDING').count(),
+        "completed" : qs.filter(status='COMPLETED').count(),
+        "in_progress" : qs.filter(status='IN_PROGRESS').count()
+
+    }
+    return Response(data,status=200)
+    
+    
