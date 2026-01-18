@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from django.db.models import Q
+from django.db.models import Q,Count
 from django.http import HttpResponse
 from tasks.serializers import RegisterSerializer,TaskSerializer
 from rest_framework.response import Response
@@ -10,11 +10,20 @@ from rest_framework.pagination import PageNumberPagination
 from .models import Tasks
 from django.utils import timezone
 from datetime import timedelta
+from django.shortcuts import get_object_or_404
 
 
 # Create your views here.
 def hello(request):
     return HttpResponse("<h1>Testing....</h1>")
+
+
+def get_user_tasks(request):
+    return Tasks.objects.filter(user=request.user, is_deleted=False)
+
+def get_user_task(request, task_id):
+    return get_object_or_404(Tasks,id=task_id,user=request.user,is_deleted=False)
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -38,17 +47,15 @@ def create_task(request):
 @api_view(['GET','DELETE','PUT'])
 @permission_classes([IsAuthenticated])
 def view_task(request, task_id):
-    try:
-        task = Tasks.objects.filter(is_deleted=False,user=request.user).get(id=task_id)
-    except Tasks.DoesNotExist:
-        return Response({"error": "Task not found"}, status=404)
+    
+    task = get_user_task(request,task_id)
 
     if request.method == 'GET':
         serializer = TaskSerializer(task)
         return Response(serializer.data)
 
     elif request.method == 'DELETE':
-        task = task.is_deleted = True
+        task.is_deleted = True
         task.save()
         return Response({"message": f"Task {task_id} deleted"}, status=status.HTTP_200_OK)
     
@@ -58,21 +65,12 @@ def view_task(request, task_id):
             serializer.save(user=request.user)
             return Response({"message" : f"Task {task_id} updated successfully...."},status=status.HTTP_202_ACCEPTED)
 
-    
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def view_tasks(request):
     if request.method == 'GET':
-        tasks = Tasks.objects.filter(is_deleted=False,user=request.user)
-        serializer = TaskSerializer(tasks,many=True)
-        return Response(serializer.data,status=status.HTTP_200_OK)
-    return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def view_by_filters(request):
-    if request.method == 'GET':
-        tasks = Tasks.objects.filter(user=request.user,is_deleted=False)
+        tasks = get_user_tasks(request).order_by("created_at")
 
         search = request.query_params.get("search")
         if search:
@@ -101,7 +99,7 @@ def view_by_filters(request):
             tasks = tasks.filter(priority=priority_param)
 
         ordering = request.query_params.get("ordering")
-        ORDERS = ["created_at","-created_by","status","-status","priority","-priority"]
+        ORDERS = ["created_at","-created_at","status","-status","priority","-priority"]
 
         if ordering:
             if ordering not in ORDERS:
@@ -144,10 +142,8 @@ def view_by_filters(request):
 @api_view(['PUT','PATCH'])
 @permission_classes([IsAuthenticated])
 def update_status(request,task_id):
-    try:
-        task = Tasks.objects.get(id=task_id,user=request.user,is_deleted=False)
-    except Tasks.DoesNotExist:
-        return Response({"message" : "Task Does not Exist"},status=404)
+        
+    task = get_user_task(request,task_id)
     
     status_choice = request.data.get('status')
     
@@ -169,11 +165,8 @@ def update_status(request,task_id):
 @api_view(['PUT','PATCH'])
 @permission_classes([IsAuthenticated])
 def update_priority(request,task_id):
-    try:
-        task = Tasks.objects.get(id=task_id,user=request.user)
-    except Tasks.DoesNotExist:
-        return Response({"message" : "Task Does not Exist"},status=404)
-    
+
+    task = get_user_task(request,task_id)
     priority = request.data.get('priority')
     
     if not priority:
@@ -194,15 +187,16 @@ def update_priority(request,task_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def api_stats(request):
-    qs = Tasks.objects.filter(is_deleted=False,user=request.user)
-
-    data = {
-        "total" : qs.count(),
-        "pending" : qs.filter(status='PENDING').count(),
-        "completed" : qs.filter(status='COMPLETED').count(),
-        "in_progress" : qs.filter(status='IN_PROGRESS').count()
-
-    }
-    return Response(data,status=200)
+    qs = get_user_tasks(request)
+    today = timezone.now()
+    stats = qs.aggregate(
+        total = Count('id'),
+        pending = Count('id', filter=Q(status='PENDING')),
+        completed = Count('id',filter=Q(status='COMPLETED')),
+        in_progress = Count('id',filter=Q(status='IN_PROGRESS')),
+        due = Count('id',filter=Q(due_date__gt=today) & ~Q(status = 'COMPLETED') ),
+        overdue = Count('id',filter=Q(due_date__lt=today) & ~Q(status = 'COMPLETED'))
+    )
     
-    
+    return Response(stats,status=200)
+
