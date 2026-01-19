@@ -11,6 +11,7 @@ from .models import Tasks
 from django.utils import timezone
 from datetime import timedelta
 from django.shortcuts import get_object_or_404
+from .permissions import IsAdmin
 
 
 # Create your views here.
@@ -197,3 +198,20 @@ def api_stats(request):
     
     return Response(stats,status=200)
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated,IsAdmin])
+def admin_stats(request):
+    qs = Tasks.objects.all()
+    today = timezone.now()
+    adminuser = request.user.is_superuser
+    stats = qs.aggregate(
+        total = Count('id'),
+        users = Count('user_id'),
+        pending = Count('id', filter=Q(status='PENDING')),
+        completed = Count('id',filter=Q(status='COMPLETED')),
+        in_progress = Count('id',filter=Q(status='IN_PROGRESS')),
+        due = Count('id',filter=Q(due_date__gt=today) & ~Q(status = 'COMPLETED') ),
+        overdue = Count('id',filter=Q(due_date__lt=today) & ~Q(status = 'COMPLETED'))
+    )
+    
+    return Response(stats,status=200)
