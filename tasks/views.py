@@ -14,9 +14,6 @@ from django.shortcuts import get_object_or_404
 
 
 # Create your views here.
-def hello(request):
-    return HttpResponse("<h1>Testing....</h1>")
-
 
 def get_user_tasks(request):
     return Tasks.objects.filter(user=request.user, is_deleted=False)
